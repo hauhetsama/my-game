@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yalancılar Barı</title>
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d14;--surface:#16161f;--surface2:#1e1e2a;
+  --border:rgba(255,255,255,0.08);--border2:rgba(255,255,255,0.15);
+  --text:#f0ede8;--muted:#8a8798;
+  --green:#22c97a;--red:#e8504a;--purple:#9b7ff4;--gold:#f0b429;--blue:#4a9eff;
+  --radius:10px;--radius-lg:16px;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:15px}
+.screen{display:none;min-height:100vh}
+.screen.active{display:flex}
+
+/* ── Lobi ── */
+#screen-lobby{align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 0%,#1a1230 0%,#0d0d14 70%)}
+.lobby-box{background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:2.5rem 2rem;width:100%;max-width:420px;text-align:center}
+.lobby-title{font-size:2rem;font-weight:700;letter-spacing:-0.5px;margin-bottom:0.25rem;background:linear-gradient(135deg,#f0ede8 30%,#9b7ff4);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.lobby-sub{color:var(--muted);font-size:13px;margin-bottom:2rem}
+.field-label{font-size:12px;color:var(--muted);text-align:left;margin-bottom:5px;letter-spacing:0.5px;text-transform:uppercase}
+input[type=text]{width:100%;padding:11px 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-size:15px;outline:none;transition:border-color 0.2s;margin-bottom:1rem}
+input[type=text]:focus{border-color:var(--purple)}
+.btn{display:block;width:100%;padding:12px;border-radius:var(--radius);border:none;font-size:14px;font-weight:600;cursor:pointer;transition:opacity 0.15s,transform 0.1s;letter-spacing:0.3px}
+.btn:active{transform:scale(0.98)}
+.btn:disabled{opacity:0.4;cursor:not-allowed}
+.btn-primary{background:var(--purple);color:#fff;margin-bottom:10px}
+.btn-primary:hover:not(:disabled){opacity:0.88}
+.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border2);margin-bottom:10px}
+.btn-secondary:hover:not(:disabled){border-color:var(--purple)}
+.btn-green{background:var(--green);color:#082b1a}
+.btn-green:hover:not(:disabled){opacity:0.88}
+.btn-red{background:var(--red);color:#fff}
+.btn-red:hover:not(:disabled){opacity:0.88}
+.divider{color:var(--muted);font-size:12px;margin:0.5rem 0 1rem;position:relative}
+.divider::before,.divider::after{content:'';position:absolute;top:50%;width:40%;height:1px;background:var(--border)}
+.divider::before{left:0}.divider::after{right:0}
+.error-msg{color:var(--red);font-size:13px;margin-top:8px;min-height:20px}
+
+/* ── Bekleme ── */
+#screen-waiting{flex-direction:column;align-items:center;justify-content:center;padding:2rem;background:radial-gradient(ellipse at 50% 0%,#1a1230 0%,#0d0d14 70%)}
+.waiting-box{background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:2rem;width:100%;max-width:480px}
+.room-code-display{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);padding:1rem;text-align:center;margin-bottom:1.5rem}
+.room-code-label{font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.room-code-value{font-size:2rem;font-weight:700;letter-spacing:6px;color:var(--purple)}
+.waiting-player{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.waiting-player:last-child{border-bottom:none}
+.player-dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0}
+.player-dot.host{background:var(--gold)}
+.waiting-status{color:var(--muted);font-size:13px;margin-bottom:1rem}
+
+/* ── Oyun ── */
+#screen-game{flex-direction:column;max-width:900px;margin:0 auto;width:100%;padding:1rem;gap:10px}
+
+/* Oyuncular */
+.players-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.p-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 8px;text-align:center;transition:border-color 0.2s;position:relative}
+.p-card.my-card{border-color:var(--purple)}
+.p-card.active-turn{background:#1a1a2e;border-color:var(--green)}
+.p-card.eliminated{opacity:0.35}
+.p-avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;margin:0 auto 6px}
+.p-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.p-you{font-size:10px;color:var(--purple)}
+.p-cards{font-size:11px;color:var(--muted);margin:2px 0}
+.turn-badge{position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:var(--green);color:#082b1a;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap}
+
+/* Silindir göstergesi */
+.cylinder-row{display:flex;gap:4px;justify-content:center;margin-top:6px}
+.chamber{width:12px;height:12px;border-radius:50%;border:1.5px solid var(--border2);background:var(--surface2);transition:background 0.3s,border-color 0.3s}
+.chamber.fired-safe{background:#2a3a2a;border-color:var(--green)}
+.chamber.fired-dead{background:#3a1a1a;border-color:var(--red)}
+.chamber.current{border-color:var(--gold);box-shadow:0 0 6px rgba(240,180,41,0.5)}
+
+/* Masa */
+.table-area{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1rem}
+.table-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem}
+.round-info{font-size:12px;color:var(--muted)}
+.koz-badge{background:rgba(155,127,244,0.15);border:1px solid rgba(155,127,244,0.3);color:var(--purple);font-size:12px;font-weight:700;padding:3px 10px;border-radius:20px}
+.last-claim{background:var(--surface2);border-radius:var(--radius);padding:10px 14px;margin-bottom:10px;font-size:14px;min-height:44px;display:flex;align-items:center}
+.last-claim span{color:var(--muted);font-size:13px}
+.pile-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pile-count-label{font-size:12px;color:var(--muted)}
+.card-back-mini{width:22px;height:32px;background:linear-gradient(135deg,#3a2f6e,#534ab7);border-radius:3px;border:1px solid rgba(255,255,255,0.1);display:inline-block;flex-shrink:0}
+
+/* El */
+.hand-section{flex:0}
+.hand-label{font-size:12px;color:var(--muted);margin-bottom:8px}
+.hand-cards{display:flex;gap:8px;flex-wrap:wrap}
+.hand-card{width:58px;height:80px;background:var(--surface);border:1.5px solid var(--border2);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;user-select:none;transition:transform 0.15s,border-color 0.15s,background 0.15s;gap:2px}
+.hand-card:hover{border-color:var(--purple)}
+.hand-card.selected{transform:translateY(-10px);border-color:var(--green);background:#0f2a1e}
+.hand-card.red{color:var(--red)}.hand-card.black{color:var(--text)}
+.card-rank{font-size:20px;font-weight:700;line-height:1}
+.card-suit{font-size:15px;line-height:1}
+
+/* Aksiyonlar */
+.actions-bar{display:flex;gap:8px;flex-wrap:wrap}
+.actions-bar .btn{flex:1;min-width:120px}
+.count-select{padding:10px 12px;border-radius:var(--radius);background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-size:14px;cursor:pointer;min-width:120px}
+
+/* Log */
+.log-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;height:110px;overflow-y:auto;font-size:12px;line-height:1.9}
+.log-entry.info{color:var(--blue)}.log-entry.important{color:var(--gold);font-weight:600}
+.log-entry.success{color:var(--green)}.log-entry.danger{color:var(--red)}
+
+/* ── Reveal Modal (Rus Ruleti) ── */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(6px)}
+.modal{background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:2rem;max-width:420px;width:90%;text-align:center}
+.modal h2{font-size:1.4rem;margin-bottom:0.5rem}
+.modal p{color:var(--muted);font-size:13px;margin-bottom:0.75rem;line-height:1.6}
+.reveal-cards{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:0.75rem 0}
+.reveal-card{width:48px;height:66px;background:var(--surface2);border:1.5px solid var(--border2);border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px}
+.reveal-card.red{color:var(--red)}.reveal-card.black{color:var(--text)}
+.reveal-card.is-koz{border-color:var(--green);background:#0f2a1e}
+.result-banner{padding:10px;border-radius:var(--radius);margin:0.75rem 0;font-weight:600;font-size:14px}
+.result-banner.win{background:rgba(34,201,122,0.12);color:var(--green);border:1px solid rgba(34,201,122,0.3)}
+.result-banner.lose{background:rgba(232,80,74,0.12);color:var(--red);border:1px solid rgba(232,80,74,0.3)}
+
+/* Silindir animasyonu */
+.gun-section{margin:1rem 0}
+.gun-label{font-size:11px;color:var(--muted);margin-bottom:8px;letter-spacing:0.5px;text-transform:uppercase}
+.cylinder-visual{display:flex;gap:6px;justify-content:center;margin-bottom:10px}
+.cham{width:28px;height:28px;border-radius:50%;border:2px solid var(--border2);background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:10px;transition:all 0.4s;position:relative}
+.cham.safe{background:#0f2a1e;border-color:var(--green);color:var(--green)}
+.cham.dead{background:#2a0a0a;border-color:var(--red);color:var(--red)}
+.cham.active{border-color:var(--gold);box-shadow:0 0 12px rgba(240,180,41,0.6);animation:pulse-gold 0.6s ease-in-out}
+@keyframes pulse-gold{0%,100%{box-shadow:0 0 8px rgba(240,180,41,0.4)}50%{box-shadow:0 0 20px rgba(240,180,41,0.9)}}
+
+/* Bang / Tık animasyonu */
+.shot-result{font-size:3rem;margin:0.5rem 0;animation:pop-in 0.4s cubic-bezier(0.175,0.885,0.32,1.275)}
+@keyframes pop-in{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
+.shot-text-bang{font-size:2rem;font-weight:700;color:var(--red);letter-spacing:2px;animation:shake 0.4s ease-in-out}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.shot-text-click{font-size:1.5rem;font-weight:700;color:var(--green)}
+
+/* Game over */
+#screen-gameover{align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 30%,#1a1230 0%,#0d0d14 70%);flex-direction:column;text-align:center;gap:1rem;padding:2rem}
+.winner-crown{font-size:4rem;margin-bottom:0.5rem}
+.winner-name{font-size:2rem;font-weight:700;color:var(--gold)}
+.winner-sub{color:var(--muted);font-size:15px}
+</style>
+</head>
+<body>
+
+<!-- Lobi -->
+<div id="screen-lobby" class="screen active">
+  <div class="lobby-box">
+    <div class="lobby-title">🔫 Yalancılar Barı</div>
+    <div class="lobby-sub">Blöf yap • Yakalanırsan tetiği çek</div>
+    <div class="field-label">Kullanıcı adın</div>
+    <input id="input-name" type="text" placeholder="Adını gir..." maxlength="16">
+    <button class="btn btn-primary" onclick="createRoom()">Oda Oluştur</button>
+    <div class="divider">ya da</div>
+    <div class="field-label">Oda kodu</div>
+    <input id="input-code" type="text" placeholder="XXXXX" maxlength="5" style="text-transform:uppercase;letter-spacing:4px;text-align:center">
+    <button class="btn btn-secondary" onclick="joinRoom()">Odaya Katıl</button>
+    <div id="lobby-error" class="error-msg"></div>
+  </div>
+</div>
+
+<!-- Bekleme -->
+<div id="screen-waiting" class="screen">
+  <div class="waiting-box">
+    <div class="room-code-display">
+      <div class="room-code-label">Oda Kodu — Arkadaşlarına gönder</div>
+      <div class="room-code-value" id="display-code">-----</div>
+    </div>
+    <div id="waiting-players-list"></div>
+    <div class="waiting-status" id="waiting-status">Oyuncular bekleniyor...</div>
+    <button class="btn btn-green" id="btn-start" onclick="startGame()" style="display:none;margin-top:1rem">Oyunu Başlat ▶</button>
+  </div>
+</div>
+
+<!-- Oyun -->
+<div id="screen-game" class="screen">
+  <div class="players-bar" id="players-bar"></div>
+
+  <div class="table-area">
+    <div class="table-top">
+      <div class="round-info">Tur <span id="round-num">1</span></div>
+      <div class="koz-badge">Koz: <span id="koz-display">A</span></div>
+    </div>
+    <div class="last-claim" id="last-claim"><span>Henüz kart oynanmadı</span></div>
+    <div class="pile-row">
+      <span class="pile-count-label">Destede <b id="pile-count">0</b> kart:</span>
+      <div id="pile-cards"></div>
+    </div>
+  </div>
+
+  <div class="hand-section">
+    <div class="hand-label">Elindeki kartlar — seçmek için tıkla</div>
+    <div class="hand-cards" id="hand-cards"></div>
+  </div>
+
+  <div class="actions-bar" id="actions-bar">
+    <select class="count-select" id="claim-count">
+      <option value="1">1 kart iddiası</option>
+      <option value="2">2 kart iddiası</option>
+      <option value="3">3 kart iddiası</option>
+    </select>
+    <button class="btn btn-green" id="btn-play" onclick="playCards()" disabled>Oyna ▶</button>
+    <button class="btn btn-red" id="btn-accuse" onclick="accuse()" disabled>Yalancı! 🔍</button>
+  </div>
+
+  <div class="log-box" id="log-box"></div>
+</div>
+
+<!-- Oyun Sonu -->
+<div id="screen-gameover" class="screen">
+  <div class="winner-crown">🏆</div>
+  <div class="winner-name" id="winner-name"></div>
+  <div class="winner-sub">hayatta kaldı ve kazandı!</div>
+  <button class="btn btn-primary" style="max-width:220px;margin-top:1rem" onclick="location.reload()">Yeniden Oyna</button>
+</div>
+
+<!-- Reveal Modal -->
+<div id="reveal-modal" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <h2 id="modal-title"></h2>
+    <p id="modal-verdict"></p>
+
+    <!-- Açılan kartlar -->
+    <div class="reveal-cards" id="modal-cards"></div>
+
+    <div id="modal-result" class="result-banner"></div>
+
+    <!-- Rus Ruleti animasyonu -->
+    <div class="gun-section">
+      <div class="gun-label">🔫 <span id="gun-loser-name"></span> tetiği çekiyor...</div>
+      <div class="cylinder-visual" id="cylinder-visual"></div>
+      <div id="shot-anim"></div>
+    </div>
+
+    <p id="modal-extra" style="margin-top:0.5rem"></p>
+    <button class="btn btn-primary" id="modal-continue-btn" onclick="closeModal()" style="margin-top:1rem;display:none">Devam →</button>
+  </div>
+</div>
+
+<script>
+const COLORS=['#9b7ff4','#22c97a','#f0b429','#4a9eff','#e8504a','#e879a0'];
+const RED_SUITS=['♥','♦'];
+const RANK_NAMES={A:'As',K:'Papaz',Q:'Kız',J:'Vale'};
+
+let socket,myName='',isHost=false,gameState=null;
+
+function connect(cb){
+  socket=io();
+  socket.on('connect',cb);
+
+  socket.on('roomCreated',({code})=>{
+    isHost=true;
+    document.getElementById('display-code').textContent=code;
+    showScreen('waiting');
+    document.getElementById('btn-start').style.display='block';
+  });
+
+  socket.on('roomJoined',({code})=>{
+    isHost=false;
+    document.getElementById('display-code').textContent=code;
+    showScreen('waiting');
+    document.getElementById('btn-start').style.display='none';
+  });
+
+  socket.on('gameState',state=>{
+    gameState=state;
+    if(state.state==='playing'){showScreen('game');renderGame(state);}
+    else if(state.state==='lobby'){renderWaiting(state);}
+  });
+
+  socket.on('log',({msg,type})=>addLog(msg,type));
+
+  socket.on('revealPile',data=>showReveal(data));
+
+  socket.on('gameOver',({winner})=>{
+    document.getElementById('winner-name').textContent=winner;
+    showScreen('gameover');
+  });
+
+  socket.on('error',msg=>{document.getElementById('lobby-error').textContent=msg;});
+}
+
+function showScreen(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('screen-'+name).classList.add('active');
+}
+
+function createRoom(){
+  const name=document.getElementById('input-name').value.trim();
+  if(!name){document.getElementById('lobby-error').textContent='Lütfen bir isim gir.';return;}
+  myName=name;
+  connect(()=>socket.emit('createRoom',{name}));
+}
+function joinRoom(){
+  const name=document.getElementById('input-name').value.trim();
+  const code=document.getElementById('input-code').value.trim().toUpperCase();
+  if(!name){document.getElementById('lobby-error').textContent='Lütfen bir isim gir.';return;}
+  if(!code){document.getElementById('lobby-error').textContent='Lütfen oda kodunu gir.';return;}
+  myName=name;
+  connect(()=>socket.emit('joinRoom',{name,code}));
+}
+function startGame(){socket.emit('startGame');}
+
+function renderWaiting(state){
+  document.getElementById('waiting-players-list').innerHTML=
+    state.players.map((p,i)=>`<div class="waiting-player">
+      <div class="player-dot${i===0?' host':''}"></div>
+      <span>${p.name}${i===0?' 👑':''}</span>
+    </div>`).join('');
+  document.getElementById('waiting-status').textContent=`${state.players.length} oyuncu bağlı (min 2, max 6)`;
+}
+
+function renderGame(state){
+  renderPlayers(state);renderHand(state);renderTable(state);renderActions(state);
+}
+
+function renderPlayers(state){
+  document.getElementById('players-bar').innerHTML=state.players.map((p,i)=>{
+    const color=COLORS[i%COLORS.length];
+    const initials=p.name.slice(0,2).toUpperCase();
+    const isActive=state.currentTurn===i;
+    // Silindir göstergesi
+    const gun=p.gun;
+    let chamHTML='';
+    if(gun){
+      for(let c=0;c<gun.cylinderSize;c++){
+        const history=p.shotHistory||[];
+        let cls='chamber';
+        if(c<history.length){cls+= history[c]?' fired-dead':' fired-safe';}
+        else if(c===gun.position) cls+=' current';
+        chamHTML+=`<div class="${cls}"></div>`;
+      }
+    }
+    return `<div class="p-card${p.isYou?' my-card':''}${isActive?' active-turn':''}${p.eliminated?' eliminated':''}">
+      ${isActive?'<div class="turn-badge">🎯 Sıra</div>':''}
+      <div class="p-avatar" style="background:${color}22;color:${color}">${initials}</div>
+      <div class="p-name">${p.name}</div>
+      ${p.isYou?'<div class="p-you">Sen</div>':''}
+      <div class="p-cards">${p.eliminated?'💀 Elendi':p.cardCount+' kart'}</div>
+      <div class="cylinder-row">${chamHTML}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderHand(state){
+  const c=document.getElementById('hand-cards');
+  if(!state.myHand||state.myHand.length===0){c.innerHTML='<span style="color:var(--muted);font-size:13px">Elinde kart yok.</span>';return;}
+  c.innerHTML='';
+  state.myHand.forEach((card,i)=>{
+    const isRed=RED_SUITS.includes(card.suit);
+    const div=document.createElement('div');
+    div.className=`hand-card ${isRed?'red':'black'}${card._selected?' selected':''}`;
+    div.innerHTML=`<div class="card-rank">${card.rank}</div><div class="card-suit">${card.suit}</div>`;
+    div.onclick=()=>{card._selected=!card._selected;renderHand(state);};
+    c.appendChild(div);
+  });
+}
+
+function renderTable(state){
+  document.getElementById('round-num').textContent=state.round;
+  document.getElementById('koz-display').textContent=state.requiredRank+' ('+(RANK_NAMES[state.requiredRank]||state.requiredRank)+')';
+  const cl=document.getElementById('last-claim');
+  if(state.lastPlay){
+    cl.innerHTML=`<b>${state.lastPlay.playerName}</b>&nbsp;→&nbsp;<span>${state.lastPlay.claimCount} adet ${RANK_NAMES[state.requiredRank]||state.requiredRank} oynadım</span>`;
+  }else{cl.innerHTML='<span>Henüz kart oynanmadı</span>';}
+  document.getElementById('pile-count').textContent=state.pileCount;
+  const pe=document.getElementById('pile-cards');pe.innerHTML='';
+  for(let i=0;i<Math.min(state.pileCount,10);i++){const d=document.createElement('div');d.className='card-back-mini';pe.appendChild(d);}
+}
+
+function renderActions(state){
+  const me=state.players[state.myIndex];
+  const isMyTurn=state.currentTurn===state.myIndex;
+  const canAccuse=state.lastPlay&&state.lastPlay.playerName!==myName&&!me?.eliminated;
+  document.getElementById('btn-play').disabled=!isMyTurn||me?.eliminated;
+  document.getElementById('btn-accuse').disabled=!canAccuse;
+}
+
+function playCards(){
+  if(!gameState||!gameState.myHand)return;
+  const selected=gameState.myHand.map((c,i)=>c._selected?i:-1).filter(i=>i!==-1);
+  if(selected.length===0){alert('En az 1 kart seç!');return;}
+  const claimCount=parseInt(document.getElementById('claim-count').value);
+  gameState.myHand.forEach(c=>c._selected=false);
+  socket.emit('playCards',{cardIndices:selected,claimCount});
+}
+function accuse(){socket.emit('accuse');}
+
+// ── Rus Ruleti Modal ──────────────────────────────────────────────────────────
+function showReveal(data){
+  const {cards,accuserName,accusedName,claimCount,realCount,wasBluff,loserName,realBullet,shotPosition,shotHistory}=data;
+  const req=gameState?gameState.requiredRank:'?';
+
+  document.getElementById('modal-title').textContent=wasBluff?'🃏 Blöf Yakalandı!':'😤 Haksız Suçlama!';
+  document.getElementById('modal-verdict').textContent=wasBluff
+    ?`${accusedName} blöf yaptı — ${realCount}/${claimCount} ${req} gerçekti. ${loserName} silahı alıyor...`
+    :`${accusedName} doğru söylüyordu — ${realCount}/${claimCount} ${req} gerçekti. ${accuserName} silahı alıyor...`;
+
+  // Kartlar
+  document.getElementById('modal-cards').innerHTML=cards.map(c=>{
+    const isRed=RED_SUITS.includes(c.suit);
+    const isKoz=c.rank===req;
+    return `<div class="reveal-card ${isRed?'red':'black'}${isKoz?' is-koz':''}">
+      <div style="font-size:16px;font-weight:700">${c.rank}</div>
+      <div style="font-size:13px">${c.suit}</div>
+    </div>`;
+  }).join('');
+
+  // Sonuç bandı
+  const rb=document.getElementById('modal-result');
+  const iWin=(wasBluff&&accuserName===myName)||(!wasBluff&&accusedName===myName);
+  rb.textContent=wasBluff?`${accusedName} blöf yaptı ✓`:`${accusedName} dürüsttü ✓`;
+  rb.className='result-banner '+(iWin?'win':'lose');
+
+  // Silah bölümü
+  document.getElementById('gun-loser-name').textContent=loserName;
+  document.getElementById('shot-anim').innerHTML='';
+  document.getElementById('modal-extra').textContent='';
+  document.getElementById('modal-continue-btn').style.display='none';
+
+  // Silindir animasyonu — önce tüm odalar boş göster
+  const cylEl=document.getElementById('cylinder-visual');
+  const CSIZE=6;
+  cylEl.innerHTML='';
+  const chams=[];
+  for(let i=0;i<CSIZE;i++){
+    const d=document.createElement('div');d.className='cham';d.textContent='○';chams.push(d);cylEl.appendChild(d);
+  }
+
+  // Geçmiş ateşlemeleri göster (bu reloaddan öncekiler)
+  const prevShots=(shotHistory||[]).slice(0,-1);
+  prevShots.forEach((fired,i)=>{
+    chams[i].className='cham '+(fired?'dead':'safe');
+    chams[i].textContent=fired?'💀':'✓';
+  });
+
+  // Aktif odayı vurgula
+  const activeIdx=prevShots.length;
+  setTimeout(()=>{
+    if(activeIdx<CSIZE){
+      chams[activeIdx].className='cham active';
+      chams[activeIdx].textContent='🔫';
+    }
+    // Ateş animasyonu
+    setTimeout(()=>{
+      if(activeIdx<CSIZE){
+        chams[activeIdx].className='cham '+(realBullet?'dead':'safe');
+        chams[activeIdx].textContent=realBullet?'💀':'✓';
+      }
+      const animEl=document.getElementById('shot-anim');
+      if(realBullet){
+        animEl.innerHTML=`<div class="shot-text-bang">BANG! 💥</div>`;
+        document.getElementById('modal-extra').textContent=`💀 ${loserName} elendi!`;
+      }else{
+        animEl.innerHTML=`<div class="shot-text-click">*tık* 😮‍💨</div>`;
+        const remaining=CSIZE-activeIdx-1;
+        document.getElementById('modal-extra').textContent=
+          `${loserName} bu sefer şanslıydı! Silindirde ${remaining} oda kaldı.`;
+      }
+      document.getElementById('modal-continue-btn').style.display='block';
+    },700);
+  },500);
+
+  document.getElementById('reveal-modal').style.display='flex';
+}
+
+function closeModal(){
+  document.getElementById('reveal-modal').style.display='none';
+}
+
+function addLog(msg,type){
+  const box=document.getElementById('log-box');if(!box)return;
+  const d=document.createElement('div');
+  d.className='log-entry'+(type?' '+type:'');
+  d.textContent=msg;box.appendChild(d);box.scrollTop=box.scrollHeight;
+}
+
+document.getElementById('input-code').addEventListener('keydown',e=>{if(e.key==='Enter')joinRoom();});
+document.getElementById('input-name').addEventListener('keydown',e=>{if(e.key==='Enter')joinRoom();});
+</script>
+</body>
+</html>
